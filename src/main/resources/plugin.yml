@@ -1,0 +1,23 @@
+name: RedConflictHub
+version: '${project.version}'
+main: fr.redconflict.hub.RedConflictHub
+authors: [ blixoww ]
+description: Serveur HUB de Red Conflict (lobby verrouille + file d'attente interne vers le faction).
+softdepend: [ Vault, LuckPerms ]
+
+commands:
+  hub:
+    description: Commande d'administration du HUB.
+    usage: /hub <reload|setspawn|send|queue> [args]
+    permission: hub.admin
+
+permissions:
+  hub.bypass:
+    description: Contourne toutes les protections du HUB (build, interactions, commandes, chat...).
+    default: op
+  hub.admin:
+    description: Acces a la commande /hub (reload, setspawn, send, queue...) et utilisation libre des commandes.
+    default: op
+  hub.queue.bypass:
+    description: Bypasse la file d'attente et est place en 1ere position automatiquement.
+    default: op
