@@ -7,6 +7,42 @@
 # Nom du serveur faction tel que defini dans velocity.toml ([servers]).
 faction-server: faction
 
+# ?? Authentification ?????????????????????????????????????????????????????????
+# Le reseau tourne en offline mode : le serveur accepte le pseudo que lui
+# annonce n'importe quel client. Ce verrou est donc le SEUL controle d'identite.
+# Le client modifie presente son jeton de session sur CUSTOM:AUTH_C2S, le plugin
+# le valide aupres de l'API et compare le pseudo renvoye a celui de la connexion.
+#
+# ATTENTION : ce controle ne sert a rien si les ports des autres serveurs
+# (faction, minage) sont joignables de l'exterieur. Un joueur s'y connecterait
+# directement, sans jamais passer par le HUB.
+auth:
+  enabled: true
+
+  # Adresse de l'API. Sous Pterodactyl, le HUB tourne dans un conteneur Docker :
+  # 127.0.0.1 y designe le conteneur lui-meme, PAS la machine hote. Il faut alors
+  # l'adresse du pont Docker (souvent 172.18.0.1) ou le nom de domaine de l'API.
+  api-url: "http://127.0.0.1:8080"
+
+  # Doit etre identique a RC_INTERNAL_KEY cote API. Sans elle, l'API refuse
+  # toutes les verifications et personne ne peut se connecter.
+  internal-key: ""
+
+  # Delai laisse au client pour presenter son jeton avant expulsion.
+  timeout-seconds: 10
+
+  # Que faire si l'API est injoignable ?
+  #   true  = refuser tout le monde (sur, mais le serveur devient inaccessible)
+  #   false = laisser entrer sans verifier (disponible, mais usurpation possible)
+  kick-when-api-down: true
+
+  messages:
+    no-token:      "&cConnexion refusee.\n\n&7Lance le jeu depuis le launcher Red Conflict."
+    invalid-token: "&cSession expiree.\n\n&7Reconnecte-toi dans le launcher."
+    wrong-account: "&cCe compte ne correspond pas au pseudo utilise."
+    api-down:      "&cService d'authentification indisponible.\n\n&7Reessaie dans quelques minutes."
+    not-verified:  "&cAuthentification en cours, patiente un instant..."
+
 # true  = le joueur est ajoute automatiquement a la file (ou envoye si file desactivee) des sa connexion.
 # false = le joueur reste au HUB et clique sur l'item de jonction.
 auto-join: false

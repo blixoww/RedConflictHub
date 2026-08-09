@@ -43,6 +43,7 @@ public final class RedConflictHub extends JavaPlugin {
     private RankService ranks;
     private PlayerListManager playerList;
     private QueueManager queueManager;
+    private fr.redconflict.hub.auth.AuthGate authGate;
 
     @Override
     public void onEnable() {
@@ -51,6 +52,9 @@ public final class RedConflictHub extends JavaPlugin {
 
         this.connector = new ServerConnector(this);
         getServer().getMessenger().registerOutgoingPluginChannel(this, "BungeeCord");
+        // Réception des annonces inter-serveurs (diffusées par OriginsFightCore via le proxy).
+        getServer().getMessenger().registerIncomingPluginChannel(this, "BungeeCord",
+                new fr.redconflict.hub.listeners.AnnounceReceiver());
 
         // Grades (Vault/LuckPerms) + playerlist standardisee (prefixes, tri par grade, tablist).
         this.ranks = new RankService(this);
@@ -58,7 +62,14 @@ public final class RedConflictHub extends JavaPlugin {
         this.playerList = new PlayerListManager(this, this.ranks);
         this.playerList.start();
 
+        // Verrou d'authentification : le reseau tourne en offline mode, c'est
+        // ce controle qui empeche d'entrer sous le pseudo de quelqu'un d'autre.
+        this.authGate = new fr.redconflict.hub.auth.AuthGate(this);
+        getServer().getMessenger().registerIncomingPluginChannel(
+                this, fr.redconflict.hub.auth.AuthGate.CHANNEL, this.authGate);
+
         PluginManager pm = getServer().getPluginManager();
+        pm.registerEvents(this.authGate, this);
         pm.registerEvents(new HubProtectionListener(), this);
         pm.registerEvents(new HubPlayerListener(this), this);
         pm.registerEvents(new CommandBlockerListener(this), this);
@@ -127,8 +138,23 @@ public final class RedConflictHub extends JavaPlugin {
 
     /** Envoie le joueur vers le serveur faction configure (via le proxy + file VelocityHUB). */
     public void sendToFaction(Player player) {
+        // Seul point de passage vers le faction : c'est donc ici qu'on verifie
+        // l'authentification. Sans ce garde-fou, un joueur pourrait cliquer sur
+        // l'item de jonction pendant le delai de grace et sortir du HUB sans
+        // avoir jamais presente de jeton.
+        if (authGate != null && !authGate.isVerified(player)) {
+            player.sendMessage(prefixed(getConfig().getString(
+                    "auth.messages.not-verified",
+                    "&cAuthentification en cours, patiente un instant...")));
+            return;
+        }
         player.sendMessage(prefixed(getConfig().getString("messages.joining", "Connexion...")));
         connector.send(player, getConfig().getString("faction-server", "faction"));
+    }
+
+    /** Verrou d'authentification, ou {@code null} avant l'activation du plugin. */
+    public fr.redconflict.hub.auth.AuthGate getAuthGate() {
+        return authGate;
     }
 
     // ── Monde (heure verrouillee) ──────────────────────────────────────────────
