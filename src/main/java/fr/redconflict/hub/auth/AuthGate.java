@@ -166,10 +166,7 @@ public final class AuthGate implements Listener, PluginMessageListener {
 
         switch (result.status) {
             case VALID:
-                // Comparaison indispensable : un joueur disposant d'un compte
-                // valide pourrait sinon se connecter sous le pseudo d'un autre
-                // en presentant son propre jeton.
-                if (!player.getName().equalsIgnoreCase(result.pseudo)) {
+                if (!player.getName().equals(result.pseudo)) {
                     plugin.getLogger().warning("[Auth] " + player.getName()
                             + " a presente un jeton appartenant a " + result.pseudo);
                     kick(player, "auth.messages.wrong-account",
