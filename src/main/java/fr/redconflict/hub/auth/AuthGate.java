@@ -61,13 +61,15 @@ public final class AuthGate implements Listener, PluginMessageListener {
         this.enabled = plugin.getConfig().getBoolean("auth.enabled", true);
         this.timeoutSeconds = Math.max(3, plugin.getConfig().getInt("auth.timeout-seconds", 10));
         this.kickWhenApiDown = plugin.getConfig().getBoolean("auth.kick-when-api-down", true);
-        this.api = new ApiClient(
-                plugin.getConfig().getString("auth.api-url", "http://127.0.0.1:8080"),
-                plugin.getConfig().getString("auth.internal-key", ""));
+        // AzAuth n'utilise aucune cle partagee : plus d'internal-key.
+        String apiUrl = plugin.getConfig().getString("auth.api-url", "https://redconflict.fr");
+        this.api = new ApiClient(apiUrl);
 
-        if (enabled && plugin.getConfig().getString("auth.internal-key", "").isEmpty()) {
-            plugin.getLogger().severe("[Auth] auth.internal-key est vide : l'API refusera toutes "
-                    + "les verifications et personne ne pourra se connecter.");
+        // Le launcher y envoie des mots de passe et le jeton transite en clair
+        // sans TLS. En HTTP simple, tout le systeme de comptes est illusoire.
+        if (enabled && apiUrl.startsWith("http://")) {
+            plugin.getLogger().severe("[Auth] auth.api-url est en HTTP simple (" + apiUrl
+                    + "). Les jetons de session circulent alors en clair. Utilise https://.");
         }
     }
 
@@ -181,9 +183,18 @@ public final class AuthGate implements Listener, PluginMessageListener {
                      "&cSession expiree.\n\n&7Reconnecte-toi dans le launcher.");
                 break;
 
+            case BANNED:
+                plugin.getLogger().info("[Auth] " + player.getName()
+                        + " est banni sur le site, connexion refusee."
+                        + (result.detail == null ? "" : " Raison : " + result.detail));
+                kick(player, "auth.messages.banned",
+                     "&cTon compte est banni.\n\n&7Conteste sur le Discord si tu penses a une erreur.");
+                break;
+
             case MISCONFIGURED:
-                plugin.getLogger().severe("[Auth] L'API refuse la cle interne "
-                        + "(auth.internal-key). Verifie qu'elle correspond a RC_INTERNAL_KEY.");
+                plugin.getLogger().severe("[Auth] Azuriom repond que l'API d'authentification "
+                        + "est desactivee. Active-la dans Administration > Parametres > "
+                        + "Authentification, sinon personne ne peut se connecter.");
                 if (kickWhenApiDown) {
                     kick(player, "auth.messages.api-down",
                          "&cService d'authentification indisponible.\n\n&7Reessaie dans quelques minutes.");

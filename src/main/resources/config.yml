@@ -19,14 +19,16 @@ faction-server: faction
 auth:
   enabled: true
 
-  # Adresse de l'API. Sous Pterodactyl, le HUB tourne dans un conteneur Docker :
-  # 127.0.0.1 y designe le conteneur lui-meme, PAS la machine hote. Il faut alors
-  # l'adresse du pont Docker (souvent 172.18.0.1) ou le nom de domaine de l'API.
-  api-url: "http://127.0.0.1:8080"
-
-  # Doit etre identique a RC_INTERNAL_KEY cote API. Sans elle, l'API refuse
-  # toutes les verifications et personne ne peut se connecter.
-  internal-key: ""
+  # Racine du site Azuriom. Le plugin appelle {api-url}/api/auth/verify.
+  #
+  # Le nom de domaine public est le bon choix ici, et non l'adresse du pont
+  # Docker : le certificat TLS ne vaut que pour redconflict.fr, et passer par
+  # 172.18.0.1 en HTTP ferait circuler les jetons en clair sur le pont.
+  #
+  # PREREQUIS : l'API doit etre activee cote site, dans
+  # Administration > Parametres > Authentification. Tant qu'elle ne l'est pas,
+  # Azuriom repond "Auth API is not enabled" et personne ne peut se connecter.
+  api-url: "https://redconflict.fr"
 
   # Delai laisse au client pour presenter son jeton avant expulsion.
   timeout-seconds: 10
@@ -42,6 +44,7 @@ auth:
     wrong-account: "&cCe compte ne correspond pas au pseudo utilise."
     api-down:      "&cService d'authentification indisponible.\n\n&7Reessaie dans quelques minutes."
     not-verified:  "&cAuthentification en cours, patiente un instant..."
+    banned:        "&cTon compte est banni.\n\n&7Conteste sur le Discord si tu penses a une erreur."
 
 # true  = le joueur est ajoute automatiquement a la file (ou envoye si file desactivee) des sa connexion.
 # false = le joueur reste au HUB et clique sur l'item de jonction.
