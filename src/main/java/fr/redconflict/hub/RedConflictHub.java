@@ -88,7 +88,16 @@ public final class RedConflictHub extends JavaPlugin {
 
         applyWorldRules();
 
-        getLogger().info("RedConflictHub active — faction cible : " + getConfig().getString("faction-server"));
+        // Deux items dans le meme slot, c'est un item perdu sans le moindre message.
+        if (buildJoinItem() != null && buildMinageItem() != null
+                && joinItemSlot() == minageItemSlot()) {
+            getLogger().warning("join-item.slot et minage-item.slot valent tous deux "
+                    + joinItemSlot() + " — la pioche du minage ne sera pas donnee.");
+        }
+
+        getLogger().info("RedConflictHub active — faction cible : "
+                + getConfig().getString("faction-server")
+                + ", minage cible : " + getConfig().getString("minage-server", "minage"));
     }
 
     @Override
@@ -134,13 +143,31 @@ public final class RedConflictHub extends JavaPlugin {
         for (Player p : Bukkit.getOnlinePlayers()) applyTablist(p);
     }
 
-    // ── Connexion vers le faction ──────────────────────────────────────────────
+    // ── Connexion vers les serveurs de jeu ─────────────────────────────────────
 
     /** Envoie le joueur vers le serveur faction configure (via le proxy + file VelocityHUB). */
     public void sendToFaction(Player player) {
-        // Seul point de passage vers le faction : c'est donc ici qu'on verifie
+        send(player, getConfig().getString("faction-server", "faction"),
+                getConfig().getString("messages.joining", "Connexion..."));
+    }
+
+    /**
+     * Envoie le joueur vers le serveur minage configure.
+     *
+     * <p>Sans file d'attente : elle ne protege que le faction, ou tout le monde se presente en meme
+     * temps a l'ouverture. Le minage se rejoint directement.
+     */
+    public void sendToMinage(Player player) {
+        send(player, getConfig().getString("minage-server", "minage"),
+                getConfig().getString("messages.joining-minage",
+                        "Connexion au serveur Minage en cours..."));
+    }
+
+    /** Passage effectif vers un serveur de la grappe, une fois l'authentification verifiee. */
+    private void send(Player player, String server, String message) {
+        // Seuls points de passage hors du HUB : c'est donc ici qu'on verifie
         // l'authentification. Sans ce garde-fou, un joueur pourrait cliquer sur
-        // l'item de jonction pendant le delai de grace et sortir du HUB sans
+        // un item de jonction pendant le delai de grace et sortir du HUB sans
         // avoir jamais presente de jeton.
         if (authGate != null && !authGate.isVerified(player)) {
             player.sendMessage(prefixed(getConfig().getString(
@@ -148,8 +175,8 @@ public final class RedConflictHub extends JavaPlugin {
                     "&cAuthentification en cours, patiente un instant...")));
             return;
         }
-        player.sendMessage(prefixed(getConfig().getString("messages.joining", "Connexion...")));
-        connector.send(player, getConfig().getString("faction-server", "faction"));
+        player.sendMessage(prefixed(message));
+        connector.send(player, server);
     }
 
     /** Verrou d'authentification, ou {@code null} avant l'activation du plugin. */
@@ -244,17 +271,35 @@ public final class RedConflictHub extends JavaPlugin {
         return color(getConfig().getString("messages.prefix", "")) + color(msg);
     }
 
-    /** Construit l'item de jonction d'apres la config, ou {@code null} s'il est desactive. */
+    /** Construit l'item de jonction vers le faction, ou {@code null} s'il est desactive. */
     public ItemStack buildJoinItem() {
-        if (!getConfig().getBoolean("join-item.enabled", true)) return null;
-        Material mat = Material.matchMaterial(getConfig().getString("join-item.material", "COMPASS"));
-        if (mat == null) mat = Material.COMPASS;
+        return buildConfiguredItem("join-item", Material.COMPASS, "&c&lREJOINDRE &f&lLE FACTION");
+    }
+
+    /** Construit la pioche de jonction vers le minage, ou {@code null} si elle est desactivee. */
+    public ItemStack buildMinageItem() {
+        return buildConfiguredItem("minage-item", Material.DIAMOND_PICKAXE,
+                "&b&lREJOINDRE &f&lLE MINAGE");
+    }
+
+    /**
+     * Item decrit par la section {@code path} de la config (enabled, material, name, lore).
+     *
+     * <p>Les valeurs de repli sont celles du code, et non celles du fichier livre : Bukkit ne
+     * fusionne pas les nouvelles cles dans un config.yml existant. Sur un HUB deja deploye, la
+     * section {@code minage-item} est absente, et sans ces defauts la pioche resterait invisible
+     * jusqu'a une edition manuelle du fichier.
+     */
+    private ItemStack buildConfiguredItem(String path, Material fallback, String defaultName) {
+        if (!getConfig().getBoolean(path + ".enabled", true)) return null;
+        Material mat = Material.matchMaterial(getConfig().getString(path + ".material", fallback.name()));
+        if (mat == null) mat = fallback;
         ItemStack item = new ItemStack(mat);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(color(getConfig().getString("join-item.name", "&cRejoindre")));
+            meta.setDisplayName(color(getConfig().getString(path + ".name", defaultName)));
             List<String> lore = new ArrayList<>();
-            for (String line : getConfig().getStringList("join-item.lore")) lore.add(color(line));
+            for (String line : getConfig().getStringList(path + ".lore")) lore.add(color(line));
             if (!lore.isEmpty()) meta.setLore(lore);
             item.setItemMeta(meta);
         }
@@ -263,5 +308,9 @@ public final class RedConflictHub extends JavaPlugin {
 
     public int joinItemSlot() {
         return Math.max(0, Math.min(8, getConfig().getInt("join-item.slot", 4)));
+    }
+
+    public int minageItemSlot() {
+        return Math.max(0, Math.min(8, getConfig().getInt("minage-item.slot", 5)));
     }
 }

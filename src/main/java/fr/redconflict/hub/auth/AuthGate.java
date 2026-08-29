@@ -44,11 +44,23 @@ public final class AuthGate implements Listener, PluginMessageListener {
 
     private static final Charset UTF8 = Charset.forName("UTF-8");
     private static final int MAX_TOKEN_LENGTH = 128;
+    /** Le secret est {@code <nonce b64>.<hmac b64>} : ~90 caractères, on borne large. */
+    private static final int MAX_HANDSHAKE_LENGTH = 128;
 
     private final RedConflictHub plugin;
     private final boolean enabled;
     private final int timeoutSeconds;
     private final boolean kickWhenApiDown;
+    /**
+     * Exiger une poignee de main du launcher valide, en plus du jeton.
+     *
+     * <p><b>Doit rester {@code false} tant que le nouveau launcher n'est pas
+     * deploye partout.</b> Le launcher est ce qui emet le secret : avant sa
+     * sortie, AUCUN joueur legitime n'a de poignee de main, et l'exiger les
+     * bloquerait tous. Ordre de deploiement : launcher d'abord, puis client +
+     * ce plugin, et enfin on passe ce drapeau a {@code true}.
+     */
+    private final boolean requireHandshake;
     private final ApiClient api;
 
     /** Joueurs dont le jeton a ete valide. */
@@ -61,6 +73,12 @@ public final class AuthGate implements Listener, PluginMessageListener {
         this.enabled = plugin.getConfig().getBoolean("auth.enabled", true);
         this.timeoutSeconds = Math.max(3, plugin.getConfig().getInt("auth.timeout-seconds", 10));
         this.kickWhenApiDown = plugin.getConfig().getBoolean("auth.kick-when-api-down", true);
+        this.requireHandshake = plugin.getConfig().getBoolean("auth.require-handshake", false);
+        if (enabled && requireHandshake) {
+            plugin.getLogger().info("[Auth] Poignée de main du launcher EXIGÉE. "
+                    + "Assure-toi que le launcher qui émet le secret est bien déployé, "
+                    + "sinon les joueurs légitimes seront refusés.");
+        }
         // AzAuth n'utilise aucune cle partagee : plus d'internal-key.
         String apiUrl = plugin.getConfig().getString("auth.api-url", "https://redconflict.fr");
         this.api = new ApiClient(apiUrl);
@@ -132,10 +150,16 @@ public final class AuthGate implements Listener, PluginMessageListener {
         if (verified.containsKey(player.getUniqueId())) return;
 
         final String token;
+        final String handshake;
         try {
             Cursor cursor = new Cursor(message);
             if (cursor.readVarInt() != AUTH_HELLO) return;
             token = cursor.readString(MAX_TOKEN_LENGTH);
+            // Secret de poignee de main, ajoute apres le jeton par le nouveau
+            // client. Un ancien client ne l'ecrit pas : champ absent = chaine
+            // vide, jamais une erreur. La verification n'a lieu que si
+            // require-handshake est actif.
+            handshake = cursor.isReadable() ? cursor.readString(MAX_HANDSHAKE_LENGTH) : "";
         } catch (Exception e) {
             // Payload illisible : on laisse la tache d'expulsion faire son
             // travail plutot que d'expulser tout de suite, au cas ou un autre
@@ -155,7 +179,7 @@ public final class AuthGate implements Listener, PluginMessageListener {
                 Bukkit.getScheduler().runTask(plugin, new Runnable() {
                     @Override
                     public void run() {
-                        apply(player, result);
+                        apply(player, result, token, handshake);
                     }
                 });
             }
@@ -163,7 +187,7 @@ public final class AuthGate implements Listener, PluginMessageListener {
     }
 
     /** Applique le resultat sur le thread principal. */
-    private void apply(Player player, ApiClient.Verification result) {
+    private void apply(Player player, ApiClient.Verification result, String token, String handshake) {
         if (!player.isOnline()) return;
 
         switch (result.status) {
@@ -173,6 +197,18 @@ public final class AuthGate implements Listener, PluginMessageListener {
                             + " a presente un jeton appartenant a " + result.pseudo);
                     kick(player, "auth.messages.wrong-account",
                          "&cCe compte ne correspond pas au pseudo utilise.");
+                    return;
+                }
+                // Jeton bon, mais lancé hors launcher : le secret manque ou est
+                // faux. C'est le verrou dur — un jeton copié dans un client
+                // démarré à la main ne suffit plus à entrer.
+                if (requireHandshake && !HandshakeVerifier.valid(token, handshake)) {
+                    plugin.getLogger().warning("[Auth] " + player.getName()
+                            + " a un jeton valide mais AUCUNE poignée de main de launcher"
+                            + " valide (lancement hors launcher ?).");
+                    kick(player, "auth.messages.no-handshake",
+                         "&cLance le jeu depuis le launcher Red Conflict.\n\n"
+                         + "&7Ton compte est bon, mais le client n'a pas prouvé qu'il venait du launcher.");
                     return;
                 }
                 accept(player);
@@ -252,6 +288,11 @@ public final class AuthGate implements Listener, PluginMessageListener {
 
         Cursor(byte[] data) {
             this.data = data;
+        }
+
+        /** Reste-t-il des octets à lire ? Sert à traiter le secret comme optionnel. */
+        boolean isReadable() {
+            return index < data.length;
         }
 
         int readVarInt() {

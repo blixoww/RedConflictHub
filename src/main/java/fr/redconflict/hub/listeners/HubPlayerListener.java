@@ -19,12 +19,13 @@ import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerToggleFlightEvent;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.util.Vector;
 
 /**
  * Met le joueur dans l'etat "lobby" a la connexion (adventure, vie/faim pleines, inventaire propre,
- * item de jonction, teleportation au spawn) et gere : le clic sur l'item, l'anti-vide, le double-saut,
+ * items de jonction, teleportation au spawn) et gere : le clic sur ces items, l'anti-vide, le double-saut,
  * la tablist, les messages de connexion/deconnexion et le blocage du chat.
  */
 public class HubPlayerListener implements Listener {
@@ -80,6 +81,14 @@ public class HubPlayerListener implements Listener {
         if (joinItem != null) {
             p.getInventory().setItem(plugin.joinItemSlot(), joinItem);
             p.getInventory().setHeldItemSlot(plugin.joinItemSlot());
+        }
+
+        // Pioche du minage. Jamais par-dessus l'item de jonction : deux items dans le meme slot,
+        // c'est un item perdu (le cas est signale au demarrage du plugin).
+        ItemStack minageItem = plugin.buildMinageItem();
+        if (minageItem != null
+                && (joinItem == null || plugin.minageItemSlot() != plugin.joinItemSlot())) {
+            p.getInventory().setItem(plugin.minageItemSlot(), minageItem);
         }
 
         Location spawn = plugin.effectiveSpawn();
@@ -179,11 +188,11 @@ public class HubPlayerListener implements Listener {
         boolean rightClick = a == Action.RIGHT_CLICK_AIR || a == Action.RIGHT_CLICK_BLOCK;
         Player p = e.getPlayer();
 
-        // Clic droit avec l'item de jonction → rejoindre la file (ou envoyer directement)
-        if (rightClick && plugin.getConfig().getBoolean("join-item.enabled", true)) {
+        if (rightClick) {
             ItemStack inHand = p.getItemInHand();
-            ItemStack join   = plugin.buildJoinItem();
-            if (inHand != null && join != null && inHand.getType() == join.getType()) {
+
+            // Clic droit avec l'item de jonction → rejoindre la file (ou envoyer directement)
+            if (sameItem(inHand, plugin.buildJoinItem())) {
                 e.setCancelled(true);
                 QueueManager q = plugin.getQueue();
                 if (plugin.getConfig().getBoolean("queue.enabled", true) && q != null) {
@@ -202,12 +211,36 @@ public class HubPlayerListener implements Listener {
                 }
                 return;
             }
+
+            // Clic droit avec la pioche → minage, sans passer par la file.
+            if (sameItem(inHand, plugin.buildMinageItem())) {
+                e.setCancelled(true);
+                // Sinon la file continuerait de le compter et l'enverrait au faction plus tard.
+                QueueManager q = plugin.getQueue();
+                if (q != null) q.removePlayer(p);
+                plugin.sendToMinage(p);
+                return;
+            }
         }
 
         // Bloquer les interactions blocs pour les non-staff
         if (locked(p) && (a == Action.RIGHT_CLICK_BLOCK || a == Action.PHYSICAL)) {
             e.setCancelled(true);
         }
+    }
+
+    /**
+     * L'item en main est-il celui decrit par la config ? Le materiau suffirait tant que les deux
+     * items de jonction en ont un different ; le nom affiche departage les configurations qui leur
+     * donnent le meme (une pioche pour les deux, par exemple).
+     */
+    private static boolean sameItem(ItemStack inHand, ItemStack model) {
+        if (inHand == null || model == null || inHand.getType() != model.getType()) return false;
+        ItemMeta modelMeta = model.getItemMeta();
+        String expected = modelMeta == null ? null : modelMeta.getDisplayName();
+        if (expected == null || expected.isEmpty()) return true;
+        ItemMeta handMeta = inHand.getItemMeta();
+        return handMeta != null && expected.equals(handMeta.getDisplayName());
     }
 
     @EventHandler
